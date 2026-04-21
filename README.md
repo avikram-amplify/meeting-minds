@@ -18,7 +18,7 @@ docker compose up --build
 
 2. Open:
 
-- Frontend: `http://127.0.0.1:3000/`
+- Frontend: `http://localhost:3000/`
 - OpenAPI schema: `http://localhost:8000/api/schema/`
 - Backend health: `http://localhost:8000/health/ready/`
 
@@ -27,7 +27,7 @@ This repository should be treated as healthy only if it starts from `docker comp
 ## What's In The Repo
 
 ```text
-legendary-telegram-main/
+meeting-minds/
 |-- AGENTS.md
 |-- README.md
 |-- .env
