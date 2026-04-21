@@ -19,7 +19,6 @@ docker compose up --build
 2. Open:
 
 - Frontend: `http://localhost:3000`
-- API docs: `http://localhost:8000/api/docs/`
 - OpenAPI schema: `http://localhost:8000/api/schema/`
 - Backend health: `http://localhost:8000/health/ready/`
 
@@ -35,14 +34,12 @@ legendary-telegram-main/
 |-- README.md
 |-- .env.example
 |-- docker-compose.yml
-|-- docs/
 |-- backend/
 `-- frontend/
 ```
 
 - `backend/`: Django, DRF, Channels, business logic, migrations, tests
 - `frontend/`: React, TypeScript, Vite, UI, browser-side API and websocket handling
-- `docs/`: API contract, schema, architecture, deployment notes, tasks
 
 ## Core Features
 
@@ -169,8 +166,6 @@ docker compose run --rm frontend npm run typecheck
 Keep these principles in mind:
 
 - follow `AGENTS.md`
-- treat `docs/API_CONTRACT.md` as the API source of truth
-- treat `docs/SCHEMA.md` as the schema source of truth
 - keep backend and frontend behavior aligned
 - prefer small, explicit changes
 - update docs when behavior or terminology changes
@@ -181,11 +176,6 @@ Keep these principles in mind:
 Read these first when making product or implementation changes:
 
 - [AGENTS.md](AGENTS.md)
-- [docs/API_CONTRACT.md](docs/API_CONTRACT.md)
-- [docs/SCHEMA.md](docs/SCHEMA.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/DEPLOYEMENT.md](docs/DEPLOYEMENT.md)
-- [docs/TASKS.md](docs/TASKS.md)
 
 ## Status
 

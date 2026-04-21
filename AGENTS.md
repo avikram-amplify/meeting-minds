@@ -13,12 +13,7 @@ When in doubt, choose the **smallest secure, testable, spec-compliant change**.
 Use documents in this order:
 
 1. `AGENTS.md`
-2. `docs/API_CONTRACT.md`
-3. `docs/SCHEMA.md`
-4. `docs/ARCHITECTURE.md`
-5. `docs/DEPLOYEMENT.md`
-6. `docs/TASKS.md`
-7. `docs/DJANGO_MODELS_MAPPING.md`
+
 8. source code and tests
 9. temporary notes or plans
 
@@ -81,9 +76,6 @@ Agents must not:
 Always:
 
 - read `AGENTS.md`
-- read `docs/API_CONTRACT.md`
-- read the relevant parts of `docs/SCHEMA.md`
-- read the relevant parts of `docs/ARCHITECTURE.md`
 - identify the affected modules first
 - check whether an existing abstraction already fits the change
 
@@ -91,9 +83,6 @@ Always:
 
 Keep these rules in force:
 
-- REST and WebSocket behavior must match `docs/API_CONTRACT.md`
-- schema changes must follow `docs/SCHEMA.md`
-- architecture boundaries must follow `docs/ARCHITECTURE.md`
 - deployment assumptions must stay compatible with Docker Compose
 - authorization checks must stay close to business actions
 - websocket events must reflect persisted state
