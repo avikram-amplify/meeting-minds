@@ -1186,7 +1186,7 @@ export default function App() {
   async function handleJoinRoom(roomId: string) {
     try {
       await joinRoom(roomId);
-      pushInfo("Room joined.");
+      pushInfo("Space joined.");
       refreshCurrentShellSilently();
       await handleSelectChat({ kind: "room", id: roomId });
     } catch (error) {
@@ -1197,7 +1197,7 @@ export default function App() {
   async function handleLeaveRoom(roomId: string) {
     try {
       await leaveRoom(roomId);
-      pushInfo("Room left.");
+      pushInfo("Space left.");
       refreshCurrentShellSilently();
     } catch (error) {
       pushError(error);
@@ -1329,7 +1329,7 @@ export default function App() {
     try {
       await inviteUserToRoom(activeRoom.id, inviteUsername);
       setInviteUsername("");
-      pushInfo("Invitation sent.");
+      pushInfo("Invite sent.");
       refreshActiveRoomSilently(activeRoom.id);
     } catch (error) {
       pushError(error);
@@ -1349,7 +1349,7 @@ export default function App() {
       });
       setActiveRoom((current) => (current ? { ...current, ...updated } : current));
       refreshCurrentShellSilently();
-      pushInfo("Room updated.");
+      pushInfo("Space updated.");
     } catch (error) {
       pushError(error);
     }
@@ -1361,7 +1361,7 @@ export default function App() {
     }
     try {
       await deleteRoom(activeRoom.id);
-      pushInfo("Room deleted.");
+      pushInfo("Space deleted.");
       setActiveChat(null);
       refreshCurrentShellSilently();
     } catch (error) {
@@ -1527,7 +1527,7 @@ export default function App() {
     return (
       <main className="loading-shell">
         <div className="spinner" />
-        <p>Bootstrapping chat client…</p>
+        <p>Opening Meeting Minds...</p>
       </main>
     );
   }
@@ -1556,29 +1556,34 @@ export default function App() {
     <>
       <main className="app-shell">
         <header className="topbar">
-          <div>
-            <div className="eyebrow">Online Chat Server</div>
-            <h1>Classic chat client</h1>
+          <div className="brand-block">
+            <div className="eyebrow">Meeting Minds</div>
+            <h1>Shared spaces and direct conversations</h1>
+            <p className="brand-subtitle">
+              A focused place for messages, files, people, and live presence.
+            </p>
           </div>
           <div className="topbar-meta">
             <div className="connection-pill" data-state={connectionState}>
               {connectionState === "open" ? "Live" : connectionState === "connecting" ? "Connecting" : "Offline"}
             </div>
-            <button className="ghost-button" onClick={() => setShowCreateRoomModal(true)}>
-              New Room
-            </button>
-            <button className="ghost-button" onClick={() => setShowPeopleModal(true)}>
-              People
-            </button>
-            <button
-              className="ghost-button"
-              onClick={() => {
-                setShowSessionsModal(true);
-                void loadSessions();
-              }}
-            >
-              Sessions
-            </button>
+            <div className="topbar-actions">
+              <button className="ghost-button" onClick={() => setShowCreateRoomModal(true)}>
+                New Space
+              </button>
+              <button className="ghost-button" onClick={() => setShowPeopleModal(true)}>
+                People
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setShowSessionsModal(true);
+                  void loadSessions();
+                }}
+              >
+                Sessions
+              </button>
+            </div>
             <div className="profile-card">
               <div>
                 <strong>{profile.username}</strong>
@@ -1598,14 +1603,14 @@ export default function App() {
                 className={sidebarTab === "rooms" ? "is-active" : ""}
                 onClick={() => setSidebarTab("rooms")}
               >
-                Rooms
+                Spaces
                 {unreadRooms ? <span className="badge">{compactCount(unreadRooms)}</span> : null}
               </button>
               <button
                 className={sidebarTab === "people" ? "is-active" : ""}
                 onClick={() => setSidebarTab("people")}
               >
-                Contacts
+                People
                 {unreadDialogs || notificationSummary.incoming_friend_requests ? (
                   <span className="badge">
                     {compactCount(unreadDialogs + notificationSummary.incoming_friend_requests)}
@@ -1617,7 +1622,7 @@ export default function App() {
             {sidebarTab === "rooms" ? (
               <>
                 <section className="sidebar-section">
-                  <div className="section-title">Joined Rooms</div>
+                  <div className="section-title">Joined Spaces</div>
                   {joinedRooms.length ? (
                     joinedRooms.map((room) => (
                       <button
@@ -1627,22 +1632,22 @@ export default function App() {
                       >
                         <div>
                           <strong>{room.name}</strong>
-                          <span>{room.visibility === "private" ? "Private room" : "Public room"}</span>
+                          <span>{room.visibility === "private" ? "Private space" : "Open space"}</span>
                         </div>
                         {(room.unread_count ?? 0) > 0 ? <span className="badge">{compactCount(room.unread_count ?? 0)}</span> : null}
                       </button>
                     ))
                   ) : (
-                    <p className="empty-copy">No rooms joined yet.</p>
+                    <p className="empty-copy">No spaces joined yet.</p>
                   )}
                 </section>
 
                 <section className="sidebar-section">
-                  <div className="section-title">Public Search</div>
+                  <div className="section-title">Explore Spaces</div>
                   <input
                     className="search-input"
                     onChange={(event) => setPublicSearch(event.target.value)}
-                    placeholder="Search public rooms"
+                    placeholder="Search open spaces"
                     value={publicSearch}
                   />
                   {publicRooms.map((room) => {
@@ -1651,7 +1656,7 @@ export default function App() {
                       <div className="list-card" key={room.id}>
                         <div>
                           <strong>{room.name}</strong>
-                          <span>{room.member_count} members</span>
+                          <span>{room.member_count} people inside</span>
                         </div>
                         <button className="mini-button positive" disabled={isJoined} onClick={() => void handleJoinRoom(room.id)}>
                           {isJoined ? "Joined" : "Join"}
@@ -1663,7 +1668,7 @@ export default function App() {
 
                 {pendingInvitations.length ? (
                   <section className="sidebar-section">
-                    <div className="section-title">Pending Invitations</div>
+                    <div className="section-title">Pending Invites</div>
                     {pendingInvitations.map((invitation) => (
                       <div className="list-card" key={invitation.id}>
                         <div>
@@ -1686,7 +1691,7 @@ export default function App() {
             ) : (
               <>
                 <section className="sidebar-section">
-                  <div className="section-title">Direct Dialogs</div>
+                  <div className="section-title">Direct Conversations</div>
                   {dialogs.length ? (
                     dialogs.map((dialog) => (
                       <button
@@ -1698,19 +1703,19 @@ export default function App() {
                           <strong>{dialog.other_user.username}</strong>
                           <span>
                             {dialog.other_user.presence ?? "offline"}
-                            {dialog.is_frozen ? " · frozen" : ""}
+                            {dialog.is_frozen ? " - frozen" : ""}
                           </span>
                         </div>
                         {dialog.unread_count > 0 ? <span className="badge">{compactCount(dialog.unread_count)}</span> : null}
                       </button>
                     ))
                   ) : (
-                    <p className="empty-copy">No dialogs yet.</p>
+                    <p className="empty-copy">No direct conversations yet.</p>
                   )}
                 </section>
 
                 <section className="sidebar-section">
-                  <div className="section-title">Friends</div>
+                  <div className="section-title">People</div>
                   {friends.length ? (
                     friends.map((friend) => (
                       <div className="list-card" key={friend.user.id}>
@@ -1724,12 +1729,12 @@ export default function App() {
                       </div>
                     ))
                   ) : (
-                    <p className="empty-copy">No contacts yet.</p>
+                    <p className="empty-copy">No people added yet.</p>
                   )}
                 </section>
 
                 <section className="sidebar-section">
-                  <div className="section-title">Incoming Requests</div>
+                  <div className="section-title">Connection Requests</div>
                   {incomingRequests.length ? (
                     incomingRequests.map((request) => (
                       <div className="list-card" key={request.id}>
@@ -1766,12 +1771,18 @@ export default function App() {
               <>
                 <header className="conversation-header">
                   <div>
-                    <div className="eyebrow">{activeChat.kind === "room" ? activeRoom?.visibility ?? "room" : "dialog"}</div>
-                    <h2>{activeChat.kind === "room" ? activeRoom?.name ?? "Room" : currentDialog?.other_user.username ?? "Dialog"}</h2>
+                    <div className="eyebrow">
+                      {activeChat.kind === "room" ? activeRoom?.visibility ?? "space" : "direct conversation"}
+                    </div>
+                    <h2>
+                      {activeChat.kind === "room"
+                        ? activeRoom?.name ?? "Space"
+                        : currentDialog?.other_user.username ?? "Conversation"}
+                    </h2>
                   </div>
                   <div className="conversation-actions">
                     {activeChat.kind === "room" ? (
-                      <IconButton icon="leave" label="Leave room" onClick={() => void handleLeaveRoom(activeChat.id)} />
+                      <IconButton icon="leave" label="Leave space" onClick={() => void handleLeaveRoom(activeChat.id)} />
                     ) : null}
                     {activeChat.kind === "dialog" && currentDialog?.is_frozen ? <span className="warning-chip">Messaging frozen</span> : null}
                   </div>
@@ -1789,13 +1800,13 @@ export default function App() {
                   }}
                   ref={messageViewportRef}
                 >
-                  {loadingOlder ? <div className="history-banner">Loading older messages…</div> : null}
+                  {loadingOlder ? <div className="history-banner">Loading older messages...</div> : null}
                   {messageCursor ? <div className="history-banner">Scroll upward to load more history.</div> : null}
-                  {messagesLoading ? <div className="history-banner">Loading conversation…</div> : null}
+                  {messagesLoading ? <div className="history-banner">Loading conversation...</div> : null}
                   {!messagesLoading && !messages.length ? (
                     <div className="empty-history">
                       <h3>Start the conversation</h3>
-                      <p>History loads from REST, and new messages arrive through the session socket.</p>
+                      <p>History comes from the API, and fresh updates arrive through the live socket.</p>
                     </div>
                   ) : null}
 
@@ -1888,7 +1899,7 @@ export default function App() {
                         <span className="queued-chip" key={attachment.id}>
                           {attachment.filename}
                           <button onClick={() => void handleRemoveQueuedAttachment(attachment.id)} type="button">
-                            ×
+                            x
                           </button>
                         </span>
                       ))}
@@ -1927,8 +1938,8 @@ export default function App() {
               </>
             ) : (
               <div className="empty-history">
-                <h2>Select a room or dialog</h2>
-                <p>The left navigation shows joined rooms, searchable public rooms, contacts, and pending invites.</p>
+                <h2>Select a space or conversation</h2>
+                <p>The left side shows your joined spaces, searchable open spaces, people, and pending invites.</p>
               </div>
             )}
           </section>
@@ -1937,7 +1948,7 @@ export default function App() {
             {activeChat?.kind === "room" && activeRoom ? (
               <>
                 <section className="panel-card">
-                  <div className="section-title">Room Details</div>
+                  <div className="section-title">Space Details</div>
                   <div className="detail-grid">
                     <span>Owner</span>
                     <strong>{activeRoom.owner.username}</strong>
@@ -1951,13 +1962,13 @@ export default function App() {
                 </section>
 
                 <section className="panel-card">
-                  <div className="section-title">Members</div>
+                  <div className="section-title">People In This Space</div>
                   {activeRoomMembers.map((member) => (
                     <div className="list-card" key={member.user.id}>
                       <div className="list-card-content">
                         <strong>{member.user.username}</strong>
                         <span>
-                          {member.role} · {member.user.presence ?? "offline"}
+                          {member.role} - {member.user.presence ?? "offline"}
                         </span>
                       </div>
                       <div className="list-card-actions">
@@ -1991,7 +2002,7 @@ export default function App() {
                           <>
                             <IconButton
                               icon="remove"
-                              label={`Remove ${member.user.username} from room`}
+                              label={`Remove ${member.user.username} from space`}
                               onClick={() =>
                                 void runAction(
                                   () => removeRoomMember(activeRoom.id, member.user.id),
@@ -2002,7 +2013,7 @@ export default function App() {
                             />
                             <IconButton
                               icon="ban"
-                              label={`Ban ${member.user.username} from room`}
+                              label={`Ban ${member.user.username} from space`}
                               onClick={() =>
                                 void runAction(
                                   () => banRoomUser(activeRoom.id, member.user.id),
@@ -2021,15 +2032,15 @@ export default function App() {
                 {["owner", "admin"].includes(activeRoom.current_user_role) ? (
                   <>
                     <section className="panel-card">
-                      <div className="section-title">Invite User</div>
+                      <div className="section-title">Invite To Space</div>
                       <form className="stack-form" onSubmit={handleInviteUser}>
                         <input value={inviteUsername} onChange={(event) => setInviteUsername(event.target.value)} placeholder="username" />
-                        <IconButton icon="invite" label="Send room invite" type="submit" variant="positive" />
+                        <IconButton icon="invite" label="Send space invite" type="submit" variant="positive" />
                       </form>
                     </section>
 
                     <section className="panel-card">
-                      <div className="section-title">Bans</div>
+                      <div className="section-title">Active Bans</div>
                       {activeRoomBans.length ? (
                         activeRoomBans.map((ban) => (
                           <div className="list-card" key={ban.user.id}>
@@ -2069,7 +2080,7 @@ export default function App() {
                           </div>
                         ))
                       ) : (
-                        <p className="empty-copy">No pending room invitations.</p>
+                        <p className="empty-copy">No pending space invites.</p>
                       )}
                     </section>
                   </>
@@ -2077,7 +2088,7 @@ export default function App() {
 
                 {activeRoom.current_user_role === "owner" ? (
                   <section className="panel-card danger-card">
-                    <div className="section-title">Owner Controls</div>
+                    <div className="section-title">Space Controls</div>
                     <form className="stack-form" onSubmit={handleSaveRoom}>
                       <input value={roomEditName} onChange={(event) => setRoomEditName(event.target.value)} />
                       <textarea rows={3} value={roomEditDescription} onChange={(event) => setRoomEditDescription(event.target.value)} />
@@ -2086,11 +2097,11 @@ export default function App() {
                         <option value="private">Private</option>
                       </select>
                       <button className="primary-button" type="submit">
-                        Save Room
+                        Save Space
                       </button>
                     </form>
                     <button className="danger-button" onClick={() => void handleDeleteRoom()}>
-                      Delete Room
+                      Delete Space
                     </button>
                   </section>
                 ) : null}
@@ -2098,7 +2109,7 @@ export default function App() {
             ) : currentDialog ? (
               <>
                 <section className="panel-card">
-                  <div className="section-title">Contact</div>
+                  <div className="section-title">Person</div>
                   <div className="detail-grid">
                     <span>User</span>
                     <strong>{currentDialog.other_user.username}</strong>
@@ -2110,8 +2121,8 @@ export default function App() {
                 </section>
 
                 <section className="panel-card">
-                  <div className="section-title">Relationship</div>
-                  {activeFriend ? <p className="empty-copy">Friends since {formatTimestamp(activeFriend.friend_since)}</p> : <p className="empty-copy">Not in friends list.</p>}
+                  <div className="section-title">Connection</div>
+                  {activeFriend ? <p className="empty-copy">Connected since {formatTimestamp(activeFriend.friend_since)}</p> : <p className="empty-copy">Not in your people list yet.</p>}
                   <div className="inline-actions wrap">
                     {activeFriend ? (
                       <IconButton
@@ -2142,7 +2153,7 @@ export default function App() {
             ) : (
               <section className="panel-card">
                 <div className="section-title">Context</div>
-                <p className="empty-copy">Member lists, moderation tools, and contact details appear here for the selected chat.</p>
+                <p className="empty-copy">People, moderation tools, and conversation context appear here for the selected thread.</p>
               </section>
             )}
           </aside>
@@ -2150,10 +2161,10 @@ export default function App() {
       </main>
 
       {showCreateRoomModal ? (
-        <Modal title="Create Room" onClose={() => setShowCreateRoomModal(false)}>
+        <Modal title="Create Space" onClose={() => setShowCreateRoomModal(false)}>
           <form className="stack-form" onSubmit={handleCreateRoom}>
             <label>
-              Name
+              Space name
               <input value={newRoomName} onChange={(event) => setNewRoomName(event.target.value)} required />
             </label>
             <label>
@@ -2168,14 +2179,14 @@ export default function App() {
               </select>
             </label>
             <button className="primary-button" type="submit">
-              Create
+              Create Space
             </button>
           </form>
         </Modal>
       ) : null}
 
       {showPeopleModal ? (
-        <Modal title="People Actions" onClose={() => setShowPeopleModal(false)}>
+        <Modal title="People" onClose={() => setShowPeopleModal(false)}>
           <form className="stack-form" onSubmit={handleSendFriendRequest}>
             <label>
               Username
@@ -2186,12 +2197,12 @@ export default function App() {
               <textarea rows={3} value={friendRequestMessage} onChange={(event) => setFriendRequestMessage(event.target.value)} />
             </label>
             <button className="primary-button" type="submit">
-              Send Friend Request
+              Send Connection Request
             </button>
           </form>
           {outgoingRequests.length ? (
             <section className="panel-card">
-              <div className="section-title">Outgoing Requests</div>
+              <div className="section-title">Sent Requests</div>
               {outgoingRequests.map((request) => (
                 <div className="list-card" key={request.id}>
                   <div>
@@ -2204,7 +2215,7 @@ export default function App() {
           ) : null}
           {peerBans.length ? (
             <section className="panel-card">
-              <div className="section-title">Peer Bans</div>
+              <div className="section-title">Blocked People</div>
               {peerBans.map((ban) => (
                 <div className="list-card" key={ban.user.id}>
                   <div>
@@ -2226,17 +2237,17 @@ export default function App() {
 
       {showSessionsModal ? (
         <Modal title="Active Sessions" onClose={() => setShowSessionsModal(false)}>
-          {sessionsLoading ? <p className="empty-copy">Loading sessions…</p> : null}
+          {sessionsLoading ? <p className="empty-copy">Loading sessions...</p> : null}
           {sessions.map((session) => (
             <div className="list-card" key={session.id}>
               <div>
-                <strong>{session.is_current ? "Current session" : "Active session"}</strong>
+                <strong>{session.is_current ? "This device" : "Signed-in device"}</strong>
                 <span>{session.user_agent || "Unknown agent"}</span>
                 <span>{session.ip_address || "Unknown IP"}</span>
               </div>
               {!session.is_current ? (
                 <button className="mini-button danger" onClick={() => void runAction(() => revokeSession(session.id), loadSessions)}>
-                  Revoke
+                  Sign Out
                 </button>
               ) : (
                 <span className="warning-chip">Current</span>

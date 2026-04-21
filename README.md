@@ -10,19 +10,13 @@ It combines:
 
 ## Quick Start
 
-1. Create a local env file from the example:
-
-```bash
-cp .env.example .env
-```
-
-2. Start the app from the repository root:
+1. Start the app from the repository root:
 
 ```bash
 docker compose up --build
 ```
 
-3. Open:
+2. Open:
 
 - Frontend: `http://localhost:3000`
 - API docs: `http://localhost:8000/api/docs/`
@@ -31,17 +25,19 @@ docker compose up --build
 
 This repository should be treated as healthy only if it starts from `docker compose up --build`.
 
-## What’s In The Repo
+If you want to override ports, credentials, or local settings, copy `.env.example` to `.env` and adjust values there. The compose file includes safe local defaults, so a copied `.env` is optional for first startup.
+
+## What's In The Repo
 
 ```text
 legendary-telegram-main/
-├── AGENTS.md
-├── README.md
-├── .env.example
-├── docker-compose.yml
-├── docs/
-├── backend/
-└── frontend/
+|-- AGENTS.md
+|-- README.md
+|-- .env.example
+|-- docker-compose.yml
+|-- docs/
+|-- backend/
+`-- frontend/
 ```
 
 - `backend/`: Django, DRF, Channels, business logic, migrations, tests

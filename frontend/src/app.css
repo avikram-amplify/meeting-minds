@@ -1,12 +1,12 @@
 :root {
   color-scheme: light;
-  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
   line-height: 1.4;
   font-weight: 400;
   background:
-    radial-gradient(circle at top left, rgba(245, 158, 11, 0.22), transparent 24%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.2), transparent 28%),
-    linear-gradient(180deg, #f8f6f0 0%, #ebe6dc 100%);
+    radial-gradient(circle at top left, rgba(217, 119, 6, 0.2), transparent 24%),
+    radial-gradient(circle at top right, rgba(8, 145, 178, 0.18), transparent 30%),
+    linear-gradient(180deg, #fbf7ef 0%, #eee6d7 100%);
   color: #1f2937;
   --surface: rgba(255, 252, 246, 0.92);
   --surface-strong: #fffaf1;
@@ -26,6 +26,16 @@
 body {
   margin: 0;
   min-height: 100vh;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.34), transparent 40%),
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.28), transparent 22%);
+  pointer-events: none;
 }
 
 button,
@@ -80,6 +90,20 @@ textarea {
   padding: 2rem;
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+}
+
+.auth-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-panel::before,
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.82), rgba(15, 118, 110, 0.82), rgba(14, 165, 233, 0.5));
 }
 
 .auth-panel h1,
@@ -244,9 +268,10 @@ button:disabled {
 
 .app-shell {
   min-height: 100vh;
-  padding: 1.25rem;
+  padding: 1.4rem;
   display: grid;
   gap: 1rem;
+  animation: rise-in 280ms ease;
 }
 
 .topbar,
@@ -262,11 +287,24 @@ button:disabled {
 }
 
 .topbar {
+  position: relative;
   padding: 1.25rem 1.5rem;
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
+  overflow: hidden;
+}
+
+.brand-block {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.brand-subtitle {
+  margin: 0;
+  max-width: 38rem;
+  color: var(--text-muted);
 }
 
 .profile-card {
@@ -277,6 +315,13 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: 0.75rem 1rem;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .profile-card span,
@@ -340,6 +385,11 @@ button:disabled {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(148, 163, 184, 0.16);
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
 }
 
 .list-item > div,
@@ -378,6 +428,14 @@ button:disabled {
 .list-item.is-selected {
   background: linear-gradient(135deg, rgba(15, 118, 110, 0.16), rgba(8, 145, 178, 0.12));
   border-color: rgba(15, 118, 110, 0.3);
+}
+
+.list-item:hover,
+.list-card:hover,
+.message-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 118, 110, 0.2);
+  box-shadow: 0 16px 32px rgba(71, 85, 105, 0.12);
 }
 
 .badge,
@@ -442,6 +500,10 @@ button:disabled {
   border: 1px solid rgba(148, 163, 184, 0.16);
   display: grid;
   gap: 0.65rem;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease;
 }
 
 .message-card.is-own {
@@ -751,10 +813,35 @@ button:disabled {
 }
 
 .connection-pill[data-state="open"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(220, 252, 231, 0.9);
+  border: 1px solid rgba(34, 197, 94, 0.18);
   color: #166534;
 }
 
+.connection-pill[data-state="connecting"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(254, 243, 199, 0.9);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  color: #92400e;
+}
+
 .connection-pill[data-state="closed"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(254, 226, 226, 0.9);
+  border: 1px solid rgba(220, 38, 38, 0.18);
   color: #b91c1c;
 }
 
@@ -817,5 +904,17 @@ button:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

@@ -1,23 +1,23 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16
     container_name: chat_postgres
     init: true
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-chat_app}
+      POSTGRES_USER: ${POSTGRES_USER:-chat_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chat_password}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-chat_user} -d ${POSTGRES_DB:-chat_app}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -42,11 +42,9 @@ services:
     container_name: chat_minio
     init: true
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
       - "${MINIO_PORT:-9000}:9000"
@@ -64,8 +62,9 @@ services:
     container_name: chat_minio_init
     init: true
     restart: "no"
-    env_file:
-      - .env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     depends_on:
       minio:
         condition: service_healthy
@@ -73,7 +72,7 @@ services:
       [
         "/bin/sh",
         "-c",
-        "mc alias set local http://minio:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" && mc mb --ignore-existing local/uploads",
+        "mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" && mc mb --ignore-existing local/uploads",
       ]
 
   backend:
@@ -83,9 +82,33 @@ services:
     container_name: chat_backend
     init: true
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chat_app}
+      POSTGRES_USER: ${POSTGRES_USER:-chat_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chat_password}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://chat_user:chat_password@postgres:5432/chat_app}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-dev-secret-key}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DJANGO_CORS_ALLOWED_ORIGINS: ${DJANGO_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings}
+      DJANGO_USE_X_FORWARDED_HOST: ${DJANGO_USE_X_FORWARDED_HOST:-0}
+      DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-0}
+      DJANGO_SECURE_HSTS_SECONDS: ${DJANGO_SECURE_HSTS_SECONDS:-0}
+      CHAT_REDIS_PRESENCE_ENABLED: ${CHAT_REDIS_PRESENCE_ENABLED:-1}
+      CHAT_PRESENCE_HEARTBEAT_TTL_SECONDS: ${CHAT_PRESENCE_HEARTBEAT_TTL_SECONDS:-90}
+      CHAT_PRESENCE_SNAPSHOT_TTL_SECONDS: ${CHAT_PRESENCE_SNAPSHOT_TTL_SECONDS:-120}
+      CHAT_TYPING_TTL_SECONDS: ${CHAT_TYPING_TTL_SECONDS:-15}
+      ATTACHMENTS_STORAGE_BACKEND: ${ATTACHMENTS_STORAGE_BACKEND:-s3}
+      ATTACHMENTS_S3_ENDPOINT_URL: ${ATTACHMENTS_S3_ENDPOINT_URL:-http://minio:9000}
+      ATTACHMENTS_S3_BUCKET: ${ATTACHMENTS_S3_BUCKET:-uploads}
+      ATTACHMENTS_S3_ACCESS_KEY_ID: ${ATTACHMENTS_S3_ACCESS_KEY_ID:-minioadmin}
+      ATTACHMENTS_S3_SECRET_ACCESS_KEY: ${ATTACHMENTS_S3_SECRET_ACCESS_KEY:-minioadmin}
+      ATTACHMENTS_S3_REGION: ${ATTACHMENTS_S3_REGION:-us-east-1}
+      ATTACHMENTS_S3_USE_SSL: ${ATTACHMENTS_S3_USE_SSL:-0}
+      ATTACHMENTS_S3_VERIFY_SSL: ${ATTACHMENTS_S3_VERIFY_SSL:-0}
       DJANGO_RESET_INCONSISTENT_MIGRATIONS: "1"
     depends_on:
       postgres:
@@ -120,8 +143,11 @@ services:
     container_name: chat_frontend
     init: true
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      FRONTEND_PORT: ${FRONTEND_PORT:-3000}
+      FRONTEND_API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://localhost:8000/api/v1}
+      FRONTEND_WS_BASE_URL: ${FRONTEND_WS_BASE_URL:-ws://localhost:8000/ws/v1/chat}
+      FRONTEND_PROXY_TARGET: ${FRONTEND_PROXY_TARGET:-http://backend:8000}
     depends_on:
       backend:
         condition: service_healthy
