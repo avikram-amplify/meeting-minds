@@ -3,9 +3,12 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const backendTarget = env.FRONTEND_PROXY_TARGET || "http://backend:8000";
-  const publicApiBaseUrl = env.FRONTEND_API_BASE_URL || "/api/v1";
-  const publicWsBaseUrl = env.FRONTEND_WS_BASE_URL || "/ws/v1/chat";
+  // process.env carries Docker Compose injected vars; loadEnv reads .env files.
+  // Merge with process.env taking priority so runtime config wins over file config.
+  const merged = { ...env, ...process.env };
+  const backendTarget = merged.FRONTEND_PROXY_TARGET || "http://backend:8000";
+  const publicApiBaseUrl = merged.FRONTEND_API_BASE_URL || "/api/v1";
+  const publicWsBaseUrl = merged.FRONTEND_WS_BASE_URL || "/ws/v1/chat";
 
   return {
     plugins: [react()],
@@ -15,8 +18,13 @@ export default defineConfig(({ mode }) => {
       include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     },
     server: {
-      host: "0.0.0.0",
-      port: Number(env.FRONTEND_PORT || 3000),
+      host: "::",
+      port: Number(merged.FRONTEND_PORT || 3000),
+      allowedHosts: "all",
+      hmr: {
+        host: "127.0.0.1",
+        port: Number(merged.FRONTEND_PORT || 3000),
+      },
       proxy: {
         "/api": {
           target: backendTarget,
