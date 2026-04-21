@@ -18,13 +18,11 @@ docker compose up --build
 
 2. Open:
 
-- Frontend: `http://localhost:3000`
+- Frontend: `http://127.0.0.1:3000/`
 - OpenAPI schema: `http://localhost:8000/api/schema/`
 - Backend health: `http://localhost:8000/health/ready/`
 
 This repository should be treated as healthy only if it starts from `docker compose up --build`.
-
-If you want to override ports, credentials, or local settings, copy `.env.example` to `.env` and adjust values there. The compose file includes safe local defaults, so a copied `.env` is optional for first startup.
 
 ## What's In The Repo
 
@@ -32,7 +30,7 @@ If you want to override ports, credentials, or local settings, copy `.env.exampl
 legendary-telegram-main/
 |-- AGENTS.md
 |-- README.md
-|-- .env.example
+|-- .env
 |-- docker-compose.yml
 |-- backend/
 `-- frontend/
@@ -78,7 +76,7 @@ Inside the backend and API contract, you will still see terms like `rooms`, `dia
 
 ## Environment
 
-Use the root `.env.example` as the starting point.
+Use the root `.env` as the starting point.
 
 Key values include:
 

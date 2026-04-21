@@ -1,4 +1,4 @@
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   acceptFriendRequest,
@@ -46,12 +46,10 @@ import {
   revokeSession,
   sendFriendRequest,
   sendMessage,
-  toPublicUrl,
   unbanRoomUser,
   updateRoom,
   uploadAttachment,
 } from "./lib/api";
-import { MessageAttachmentCard } from "./components/MessageAttachmentCard";
 import { applyFriendRequestUpdate } from "./lib/friendRequestEvents";
 import type {
   ActiveChat,
@@ -68,30 +66,26 @@ import type {
   RoomListItem,
   RoomMember,
   SessionRecord,
-  UploadedAttachment,
   User,
 } from "./types";
+import type {
+  AuthMode,
+  ConnectionState,
+  QueuedAttachment,
+  ShellStatus,
+  SidebarTab,
+  ToastState,
+} from "./types/app";
+import { AuthShell } from "./components/auth/AuthShell";
+import { Sidebar } from "./components/sidebar/Sidebar";
+import { ConversationPanel } from "./components/chat/ConversationPanel";
+import { ContextPanel } from "./components/context/ContextPanel";
+import { CreateRoomModal } from "./components/modals/CreateRoomModal";
+import { PeopleModal } from "./components/modals/PeopleModal";
+import { SessionsModal } from "./components/modals/SessionsModal";
+import { Toast } from "./components/Toast";
 
 declare const __WS_BASE_URL__: string;
-
-type AuthMode = "login" | "register" | "reset";
-type ShellStatus = "booting" | "guest" | "ready";
-type ConnectionState = "connecting" | "open" | "closed";
-type SidebarTab = "rooms" | "people";
-type ToastTone = "info" | "error";
-
-interface ToastState {
-  tone: ToastTone;
-  message: string;
-}
-
-interface QueuedAttachment {
-  id: string;
-  filename: string;
-  size_bytes: number;
-  content_type: string;
-  comment: string | null;
-}
 
 const EMPTY_SUMMARY: NotificationSummary = {
   rooms: [],
@@ -120,51 +114,12 @@ function getWebSocketUrl(): string {
 
 function chooseInitialChat(joinedRooms: RoomListItem[], dialogs: DialogSummary[]): ActiveChat | null {
   const unreadRoom = joinedRooms.find((room) => (room.unread_count ?? 0) > 0);
-  if (unreadRoom) {
-    return { kind: "room", id: unreadRoom.id };
-  }
+  if (unreadRoom) return { kind: "room", id: unreadRoom.id };
   const unreadDialog = dialogs.find((dialog) => dialog.unread_count > 0);
-  if (unreadDialog) {
-    return { kind: "dialog", id: unreadDialog.id };
-  }
-  if (joinedRooms[0]) {
-    return { kind: "room", id: joinedRooms[0].id };
-  }
-  if (dialogs[0]) {
-    return { kind: "dialog", id: dialogs[0].id };
-  }
+  if (unreadDialog) return { kind: "dialog", id: unreadDialog.id };
+  if (joinedRooms[0]) return { kind: "room", id: joinedRooms[0].id };
+  if (dialogs[0]) return { kind: "dialog", id: dialogs[0].id };
   return null;
-}
-
-function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatRelative(value: string): string {
-  const date = new Date(value);
-  const delta = Math.round((Date.now() - date.getTime()) / 60_000);
-  if (delta < 1) {
-    return "now";
-  }
-  if (delta < 60) {
-    return `${delta}m`;
-  }
-  if (delta < 1_440) {
-    return `${Math.round(delta / 60)}h`;
-  }
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
-}
-
-function compactCount(value: number): string {
-  if (value <= 99) {
-    return String(value);
-  }
-  return "99+";
 }
 
 function upsertMessage(list: Message[], message: Message): Message[] {
@@ -172,9 +127,9 @@ function upsertMessage(list: Message[], message: Message): Message[] {
   if (existingIndex >= 0) {
     const next = list.slice();
     next[existingIndex] = message;
-    return next.sort((left, right) => left.created_at.localeCompare(right.created_at));
+    return next.sort((a, b) => a.created_at.localeCompare(b.created_at));
   }
-  return [...list, message].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  return [...list, message].sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 function upsertDialog(list: DialogSummary[], dialog: DialogSummary): DialogSummary[] {
@@ -186,9 +141,7 @@ function removeMessage(list: Message[], messageId: string): Message[] {
 }
 
 function patchPresenceInUser(user: User, targetUserId: string, presence: User["presence"]): User {
-  if (user.id !== targetUserId) {
-    return user;
-  }
+  if (user.id !== targetUserId) return user;
   return { ...user, presence };
 }
 
@@ -197,215 +150,17 @@ function updateUnreadCountsFromSummary(
   dialogs: DialogSummary[],
   summary: NotificationSummary,
 ): { joinedRooms: RoomListItem[]; dialogs: DialogSummary[] } {
-  const roomCounts = new Map(summary.rooms.map((room) => [room.room_id, room.unread_count]));
-  const dialogCounts = new Map(summary.dialogs.map((dialog) => [dialog.dialog_id, dialog.unread_count]));
+  const roomCounts = new Map(summary.rooms.map((r) => [r.room_id, r.unread_count]));
+  const dialogCounts = new Map(summary.dialogs.map((d) => [d.dialog_id, d.unread_count]));
   return {
-    joinedRooms: joinedRooms.map((room) => ({
-      ...room,
-      unread_count: roomCounts.get(room.id) ?? 0,
-    })),
-    dialogs: dialogs.map((dialog) => ({
-      ...dialog,
-      unread_count: dialogCounts.get(dialog.id) ?? 0,
-    })),
+    joinedRooms: joinedRooms.map((r) => ({ ...r, unread_count: roomCounts.get(r.id) ?? 0 })),
+    dialogs: dialogs.map((d) => ({ ...d, unread_count: dialogCounts.get(d.id) ?? 0 })),
   };
 }
 
 function isChatEqual(left: ActiveChat | null, right: ActiveChat | null): boolean {
-  if (!left || !right) {
-    return left === right;
-  }
+  if (!left || !right) return left === right;
   return left.kind === right.kind && left.id === right.id;
-}
-
-type IconName =
-  | "leave"
-  | "reply"
-  | "edit"
-  | "delete"
-  | "save"
-  | "cancel"
-  | "clear"
-  | "attach"
-  | "send"
-  | "promote"
-  | "demote"
-  | "remove"
-  | "ban"
-  | "unban"
-  | "invite"
-  | "friend-remove"
-  | "peer-ban"
-  | "peer-unban";
-
-function Icon(props: { name: IconName }) {
-  const common = {
-    fill: "none",
-    stroke: "currentColor",
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    strokeWidth: 1.8,
-  };
-
-  switch (props.name) {
-    case "leave":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M10 17l-5-5 5-5" />
-          <path {...common} d="M5 12h10" />
-          <path {...common} d="M14 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3" />
-        </svg>
-      );
-    case "reply":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M10 9l-5 4 5 4" />
-          <path {...common} d="M5 13h8a6 6 0 0 1 6 6" />
-          <path {...common} d="M13 7a6 6 0 0 1 6 6" />
-        </svg>
-      );
-    case "edit":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M4 20h4l10-10-4-4L4 16v4z" />
-          <path {...common} d="M12 6l4 4" />
-        </svg>
-      );
-    case "delete":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M4 7h16" />
-          <path {...common} d="M9 7V4h6v3" />
-          <path {...common} d="M7 7l1 13h8l1-13" />
-          <path {...common} d="M10 11v5M14 11v5" />
-        </svg>
-      );
-    case "save":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M5 4h11l3 3v13H5z" />
-          <path {...common} d="M8 4v6h8V4" />
-          <path {...common} d="M9 18h6" />
-        </svg>
-      );
-    case "cancel":
-    case "clear":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M6 6l12 12M18 6L6 18" />
-        </svg>
-      );
-    case "attach":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M8 12.5l6.4-6.4a3.5 3.5 0 1 1 5 5L10 20.5a5 5 0 0 1-7-7L12 4.5" />
-        </svg>
-      );
-    case "send":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M4 20l16-8L4 4l3 8-3 8z" />
-          <path {...common} d="M7 12h13" />
-        </svg>
-      );
-    case "promote":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M12 18V7" />
-          <path {...common} d="M8.5 10.5L12 7l3.5 3.5" />
-          <path {...common} d="M5 20h14" />
-        </svg>
-      );
-    case "demote":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <path {...common} d="M12 6v11" />
-          <path {...common} d="M8.5 13.5L12 17l3.5-3.5" />
-          <path {...common} d="M5 20h14" />
-        </svg>
-      );
-    case "remove":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="9" cy="8" r="3" />
-          <path {...common} d="M4 19a5 5 0 0 1 10 0" />
-          <path {...common} d="M16 11h5" />
-        </svg>
-      );
-    case "ban":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="12" cy="12" r="8" />
-          <path {...common} d="M8.5 8.5l7 7" />
-        </svg>
-      );
-    case "unban":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="12" cy="12" r="8" />
-          <path {...common} d="M8.5 12h7" />
-        </svg>
-      );
-    case "invite":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="9" cy="8" r="3" />
-          <path {...common} d="M4 19a5 5 0 0 1 10 0" />
-          <path {...common} d="M18 8v6M15 11h6" />
-        </svg>
-      );
-    case "friend-remove":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="9" cy="8" r="3" />
-          <path {...common} d="M4 19a5 5 0 0 1 10 0" />
-          <path {...common} d="M16 8l4 4M20 8l-4 4" />
-        </svg>
-      );
-    case "peer-ban":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="9" cy="8" r="3" />
-          <path {...common} d="M4 19a5 5 0 0 1 10 0" />
-          <circle {...common} cx="18" cy="10" r="3" />
-          <path {...common} d="M16 8l4 4" />
-        </svg>
-      );
-    case "peer-unban":
-      return (
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle {...common} cx="9" cy="8" r="3" />
-          <path {...common} d="M4 19a5 5 0 0 1 10 0" />
-          <path {...common} d="M15 10h6" />
-        </svg>
-      );
-  }
-}
-
-function IconButton(props: {
-  icon: IconName;
-  label: string;
-  onClick?: () => void;
-  type?: "button" | "submit";
-  disabled?: boolean;
-  variant?: "default" | "positive" | "danger";
-}) {
-  const variantClass =
-    props.variant === "positive" ? "positive" : props.variant === "danger" ? "danger" : "";
-
-  return (
-    <button
-      aria-label={props.label}
-      className={`icon-button ${variantClass}`.trim()}
-      disabled={props.disabled}
-      onClick={props.onClick}
-      title={props.label}
-      type={props.type ?? "button"}
-    >
-      <Icon name={props.icon} />
-      <span className="sr-only">{props.label}</span>
-    </button>
-  );
 }
 
 export default function App() {
@@ -485,29 +240,12 @@ export default function App() {
   const stickToBottomRef = useRef(true);
   const restoreScrollRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    activeChatRef.current = activeChat;
-  }, [activeChat]);
-
-  useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
-
-  useEffect(() => {
-    friendsRef.current = friends;
-  }, [friends]);
-
-  useEffect(() => {
-    incomingRequestsRef.current = incomingRequests;
-  }, [incomingRequests]);
-
-  useEffect(() => {
-    outgoingRequestsRef.current = outgoingRequests;
-  }, [outgoingRequests]);
-
-  useEffect(() => {
-    notificationSummaryRef.current = notificationSummary;
-  }, [notificationSummary]);
+  useEffect(() => { activeChatRef.current = activeChat; }, [activeChat]);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+  useEffect(() => { friendsRef.current = friends; }, [friends]);
+  useEffect(() => { incomingRequestsRef.current = incomingRequests; }, [incomingRequests]);
+  useEffect(() => { outgoingRequestsRef.current = outgoingRequests; }, [outgoingRequests]);
+  useEffect(() => { notificationSummaryRef.current = notificationSummary; }, [notificationSummary]);
 
   useEffect(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -515,19 +253,13 @@ export default function App() {
       return;
     }
     const previous = subscribedChatRef.current;
-    if (previous && !isChatEqual(previous, activeChat)) {
-      unsubscribeFromChat(previous);
-    }
-    if (activeChat && !isChatEqual(previous, activeChat)) {
-      subscribeToChat(activeChat);
-    }
+    if (previous && !isChatEqual(previous, activeChat)) unsubscribeFromChat(previous);
+    if (activeChat && !isChatEqual(previous, activeChat)) subscribeToChat(activeChat);
     subscribedChatRef.current = activeChat;
   }, [activeChat]);
 
   useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
+    if (!toast) return undefined;
     const timeout = window.setTimeout(() => setToast(null), 4_000);
     return () => window.clearTimeout(timeout);
   }, [toast]);
@@ -538,64 +270,35 @@ export default function App() {
     async function bootstrap() {
       try {
         const isAuthenticated = await fetchSessionStatus();
-        if (cancelled) {
-          return;
-        }
-        if (!isAuthenticated) {
-          setShellStatus("guest");
-          return;
-        }
+        if (cancelled) return;
+        if (!isAuthenticated) { setShellStatus("guest"); return; }
         const user = await fetchCurrentUser();
-        if (cancelled) {
-          return;
-        }
-        if (!user) {
-          setShellStatus("guest");
-          return;
-        }
+        if (cancelled) return;
+        if (!user) { setShellStatus("guest"); return; }
         setProfile(user);
         await refreshShell(user, true);
       } catch (error) {
-        if (!cancelled) {
-          setShellStatus("guest");
-          pushError(error);
-        }
+        if (!cancelled) { setShellStatus("guest"); pushError(error); }
       }
     }
 
     bootstrap();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (shellStatus !== "ready") {
-      return undefined;
-    }
+    if (shellStatus !== "ready") return undefined;
     let cancelled = false;
     startTransition(() => {
       fetchPublicRooms(deferredPublicSearch)
-        .then((rooms) => {
-          if (!cancelled) {
-            setPublicRooms(rooms);
-          }
-        })
-        .catch((error) => {
-          if (!cancelled) {
-            pushError(error);
-          }
-        });
+        .then((rooms) => { if (!cancelled) setPublicRooms(rooms); })
+        .catch((error) => { if (!cancelled) pushError(error); });
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [deferredPublicSearch, shellStatus]);
 
   useEffect(() => {
-    if (shellStatus !== "ready" || !profile) {
-      return undefined;
-    }
+    if (shellStatus !== "ready" || !profile) return undefined;
     const socket = new WebSocket(getWebSocketUrl());
     wsRef.current = socket;
     setConnectionState("connecting");
@@ -608,28 +311,14 @@ export default function App() {
         subscribedChatRef.current = activeChatRef.current;
       }
     };
-
-    socket.onclose = () => {
-      setConnectionState("closed");
-      wsRef.current = null;
-    };
-
-    socket.onerror = () => {
-      setConnectionState("closed");
-    };
-
+    socket.onclose = () => { setConnectionState("closed"); wsRef.current = null; };
+    socket.onerror = () => { setConnectionState("closed"); };
     socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as {
-        type: string;
-        payload: Record<string, unknown>;
-      };
+      const payload = JSON.parse(event.data) as { type: string; payload: Record<string, unknown> };
       handleSocketEvent(payload.type, payload.payload);
     };
 
-    const heartbeat = window.setInterval(() => {
-      sendPresenceHeartbeat(!document.hidden);
-    }, HEARTBEAT_MS);
-
+    const heartbeat = window.setInterval(() => sendPresenceHeartbeat(!document.hidden), HEARTBEAT_MS);
     const updatePresence = () => sendPresenceHeartbeat(!document.hidden);
     window.addEventListener("focus", updatePresence);
     document.addEventListener("visibilitychange", updatePresence);
@@ -672,14 +361,10 @@ export default function App() {
             currentChat.kind === "room" ? fetchRoomDetail(currentChat.id) : Promise.resolve(null),
             currentChat.kind === "room" ? fetchRoomMembers(currentChat.id) : Promise.resolve([]),
             currentChat.kind === "room" ? fetchRoomBans(currentChat.id).catch(() => []) : Promise.resolve([]),
-            currentChat.kind === "room"
-              ? fetchRoomInvitations(currentChat.id).catch(() => [])
-              : Promise.resolve([]),
+            currentChat.kind === "room" ? fetchRoomInvitations(currentChat.id).catch(() => []) : Promise.resolve([]),
           ]);
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         setMessages(nextMessages);
         setMessageCursor(pagination.next_cursor);
@@ -697,61 +382,39 @@ export default function App() {
         queueScrollToBottom();
         await markCurrentChatRead(currentChat);
       } catch (error) {
-        if (!cancelled) {
-          pushError(error);
-        }
+        if (!cancelled) pushError(error);
       } finally {
-        if (!cancelled) {
-          setMessagesLoading(false);
-        }
+        if (!cancelled) setMessagesLoading(false);
       }
     }
 
     loadChat();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [activeChat, shellStatus]);
 
   useEffect(() => {
     const viewport = messageViewportRef.current;
-    if (!viewport) {
-      return;
-    }
+    if (!viewport) return;
     if (restoreScrollRef.current !== null) {
       const previousHeight = restoreScrollRef.current;
       restoreScrollRef.current = null;
       viewport.scrollTop = viewport.scrollHeight - previousHeight;
       return;
     }
-    if (stickToBottomRef.current) {
-      viewport.scrollTop = viewport.scrollHeight;
-    }
+    if (stickToBottomRef.current) viewport.scrollTop = viewport.scrollHeight;
   }, [messages]);
 
   async function refreshShell(user: User, preserveSelection: boolean) {
     const [
-      nextJoinedRooms,
-      nextPublicRooms,
-      nextDialogs,
-      nextFriends,
-      nextIncomingRequests,
-      nextOutgoingRequests,
-      nextPeerBans,
-      nextSummary,
+      nextJoinedRooms, nextPublicRooms, nextDialogs, nextFriends,
+      nextIncomingRequests, nextOutgoingRequests, nextPeerBans, nextSummary,
     ] = await Promise.all([
-      fetchJoinedRooms(),
-      fetchPublicRooms(deferredPublicSearch),
-      fetchDialogs(),
-      fetchFriends(),
-      fetchIncomingRequests(),
-      fetchOutgoingRequests(),
-      fetchPeerBans(),
-      fetchNotificationSummary(),
+      fetchJoinedRooms(), fetchPublicRooms(deferredPublicSearch), fetchDialogs(),
+      fetchFriends(), fetchIncomingRequests(), fetchOutgoingRequests(),
+      fetchPeerBans(), fetchNotificationSummary(),
     ]);
 
     const synced = updateUnreadCountsFromSummary(nextJoinedRooms, nextDialogs, nextSummary);
-
     setJoinedRooms(synced.joinedRooms);
     setPublicRooms(nextPublicRooms);
     setDialogs(synced.dialogs);
@@ -763,19 +426,15 @@ export default function App() {
     setShellStatus("ready");
 
     if (!preserveSelection || !activeChatRef.current) {
-      startTransition(() => {
-        setActiveChat(chooseInitialChat(synced.joinedRooms, synced.dialogs));
-      });
+      startTransition(() => setActiveChat(chooseInitialChat(synced.joinedRooms, synced.dialogs)));
     } else {
       const selection = activeChatRef.current;
       const stillExists =
         selection.kind === "room"
-          ? synced.joinedRooms.some((room) => room.id === selection.id)
-          : synced.dialogs.some((dialog) => dialog.id === selection.id);
+          ? synced.joinedRooms.some((r) => r.id === selection.id)
+          : synced.dialogs.some((d) => d.id === selection.id);
       if (!stillExists) {
-        startTransition(() => {
-          setActiveChat(chooseInitialChat(synced.joinedRooms, synced.dialogs));
-        });
+        startTransition(() => setActiveChat(chooseInitialChat(synced.joinedRooms, synced.dialogs)));
       }
     }
 
@@ -801,9 +460,7 @@ export default function App() {
   }
 
   function writeSocket(type: string, payload: Record<string, unknown>) {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      return;
-    }
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({ type, payload }));
   }
 
@@ -832,11 +489,11 @@ export default function App() {
       await markChatRead(chat);
       if (chat.kind === "room") {
         setJoinedRooms((current) =>
-          current.map((room) => (room.id === chat.id ? { ...room, unread_count: 0 } : room)),
+          current.map((r) => (r.id === chat.id ? { ...r, unread_count: 0 } : r)),
         );
       } else {
         setDialogs((current) =>
-          current.map((dialog) => (dialog.id === chat.id ? { ...dialog, unread_count: 0 } : dialog)),
+          current.map((d) => (d.id === chat.id ? { ...d, unread_count: 0 } : d)),
         );
       }
     } catch {
@@ -846,30 +503,19 @@ export default function App() {
 
   function handleSocketEvent(type: string, payload: Record<string, unknown>) {
     const currentUserId = profileRef.current?.id;
-    if (!currentUserId) {
-      return;
-    }
+    if (!currentUserId) return;
 
     if (type === "presence.updated") {
       const userId = String(payload.user_id);
       const presence = payload.presence as User["presence"];
       setDialogs((current) =>
-        current.map((dialog) => ({
-          ...dialog,
-          other_user: patchPresenceInUser(dialog.other_user, userId, presence),
-        })),
+        current.map((d) => ({ ...d, other_user: patchPresenceInUser(d.other_user, userId, presence) })),
       );
       setFriends((current) =>
-        current.map((friend) => ({
-          ...friend,
-          user: patchPresenceInUser(friend.user, userId, presence),
-        })),
+        current.map((f) => ({ ...f, user: patchPresenceInUser(f.user, userId, presence) })),
       );
       setActiveRoomMembers((current) =>
-        current.map((member) => ({
-          ...member,
-          user: patchPresenceInUser(member.user, userId, presence),
-        })),
+        current.map((m) => ({ ...m, user: patchPresenceInUser(m.user, userId, presence) })),
       );
       return;
     }
@@ -892,7 +538,7 @@ export default function App() {
         other_user: User;
         responded_at?: string;
       };
-      const nextFriendRequestState = applyFriendRequestUpdate(
+      const next = applyFriendRequestUpdate(
         {
           friends: friendsRef.current,
           incomingRequests: incomingRequestsRef.current,
@@ -901,10 +547,10 @@ export default function App() {
         },
         request,
       );
-      setFriends(nextFriendRequestState.friends);
-      setIncomingRequests(nextFriendRequestState.incomingRequests);
-      setOutgoingRequests(nextFriendRequestState.outgoingRequests);
-      setNotificationSummary(nextFriendRequestState.notificationSummary);
+      setFriends(next.friends);
+      setIncomingRequests(next.incomingRequests);
+      setOutgoingRequests(next.outgoingRequests);
+      setNotificationSummary(next.notificationSummary);
       refreshCurrentShellSilently();
       if (request.status === "accepted") {
         pushInfo(`${request.other_user.username} accepted the friend request.`);
@@ -919,9 +565,7 @@ export default function App() {
       const isCurrent = activeChatRef.current?.kind === "dialog" && activeChatRef.current.id === dialog.id;
       const nextDialog = isCurrent ? { ...dialog, unread_count: 0 } : dialog;
       setDialogs((current) => upsertDialog(current, nextDialog));
-      if (dialog.is_frozen) {
-        refreshCurrentShellSilently();
-      }
+      if (dialog.is_frozen) refreshCurrentShellSilently();
       if (!isCurrent && dialog.last_message && dialog.last_message.sender_id !== currentUserId) {
         pushInfo(`New message from ${dialog.other_user.username}.`);
       }
@@ -958,15 +602,12 @@ export default function App() {
       const message = payload.message as Message;
       setJoinedRooms((current) =>
         current.map((room) => {
-          if (room.id !== message.chat_id) {
-            return room;
-          }
+          if (room.id !== message.chat_id) return room;
           const isCurrent = activeChatRef.current?.kind === "room" && activeChatRef.current.id === room.id;
           const unread = isCurrent ? 0 : (room.unread_count ?? 0) + (message.sender.id === currentUserId ? 0 : 1);
           return { ...room, unread_count: unread };
         }),
       );
-
       if (activeChatRef.current?.kind === "room" && activeChatRef.current.id === message.chat_id) {
         setMessages((current) => upsertMessage(current, message));
         if (message.sender.id !== currentUserId && !document.hidden && stickToBottomRef.current) {
@@ -980,9 +621,7 @@ export default function App() {
       const message = payload.message as Message;
       setDialogs((current) =>
         current.map((dialog) => {
-          if (dialog.id !== message.chat_id) {
-            return dialog;
-          }
+          if (dialog.id !== message.chat_id) return dialog;
           const isCurrent = activeChatRef.current?.kind === "dialog" && activeChatRef.current.id === dialog.id;
           return {
             ...dialog,
@@ -996,7 +635,6 @@ export default function App() {
           };
         }),
       );
-
       if (activeChatRef.current?.kind === "dialog" && activeChatRef.current.id === message.chat_id) {
         setMessages((current) => upsertMessage(current, message));
         if (message.sender.id !== currentUserId && !document.hidden && stickToBottomRef.current) {
@@ -1045,9 +683,7 @@ export default function App() {
       const userId = String(payload.user_id);
       if (userId === currentUserId) {
         setJoinedRooms((current) =>
-          current.map((room) =>
-            room.id === roomId ? { ...room, unread_count: Number(payload.unread_count) } : room,
-          ),
+          current.map((r) => (r.id === roomId ? { ...r, unread_count: Number(payload.unread_count) } : r)),
         );
       }
       return;
@@ -1058,9 +694,7 @@ export default function App() {
       const userId = String(payload.user_id);
       if (userId === currentUserId) {
         setDialogs((current) =>
-          current.map((dialog) =>
-            dialog.id === dialogId ? { ...dialog, unread_count: Number(payload.unread_count) } : dialog,
-          ),
+          current.map((d) => (d.id === dialogId ? { ...d, unread_count: Number(payload.unread_count) } : d)),
         );
       }
     }
@@ -1068,9 +702,7 @@ export default function App() {
 
   function refreshCurrentShellSilently() {
     const currentUser = profileRef.current;
-    if (!currentUser) {
-      return;
-    }
+    if (!currentUser) return;
     refreshShell(currentUser, true).catch(() => undefined);
   }
 
@@ -1082,9 +714,7 @@ export default function App() {
       fetchRoomInvitations(roomId).catch(() => []),
     ])
       .then(([room, members, bans, invitations]) => {
-        if (activeChatRef.current?.kind !== "room" || activeChatRef.current.id !== roomId) {
-          return;
-        }
+        if (activeChatRef.current?.kind !== "room" || activeChatRef.current.id !== roomId) return;
         setActiveRoom(room);
         setActiveRoomMembers(members);
         setActiveRoomBans(bans);
@@ -1097,11 +727,7 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     try {
-      const user = await login({
-        email: loginEmail,
-        password: loginPassword,
-        remember_me: rememberMe,
-      });
+      const user = await login({ email: loginEmail, password: loginPassword, remember_me: rememberMe });
       setProfile(user);
       await refreshShell(user, false);
       setLoginPassword("");
@@ -1116,11 +742,7 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     try {
-      await register({
-        email: registerEmail,
-        username: registerUsername,
-        password: registerPassword,
-      });
+      await register({ email: registerEmail, username: registerUsername, password: registerPassword });
       pushInfo("Registration complete. Sign in with the new account.");
       setAuthMode("login");
       setLoginEmail(registerEmail);
@@ -1159,21 +781,14 @@ export default function App() {
   }
 
   async function handleSelectChat(nextChat: ActiveChat) {
-    if (activeChatRef.current && isChatEqual(activeChatRef.current, nextChat)) {
-      return;
-    }
-    startTransition(() => {
-      setActiveChat(nextChat);
-    });
+    if (activeChatRef.current && isChatEqual(activeChatRef.current, nextChat)) return;
+    startTransition(() => setActiveChat(nextChat));
   }
 
   async function handleOpenDialog(friend: FriendItem) {
     try {
-      const existing = dialogs.find((dialog) => dialog.other_user.id === friend.user.id);
-      if (existing) {
-        await handleSelectChat({ kind: "dialog", id: existing.id });
-        return;
-      }
+      const existing = dialogs.find((d) => d.other_user.id === friend.user.id);
+      if (existing) { await handleSelectChat({ kind: "dialog", id: existing.id }); return; }
       const dialog = await ensureDialog(friend.user.id);
       const refreshedDialogs = await fetchDialogs();
       setDialogs(refreshedDialogs);
@@ -1205,9 +820,7 @@ export default function App() {
   }
 
   async function handleLoadOlder() {
-    if (!activeChat || !messageCursor || loadingOlder || !messageViewportRef.current) {
-      return;
-    }
+    if (!activeChat || !messageCursor || loadingOlder || !messageViewportRef.current) return;
     setLoadingOlder(true);
     restoreScrollRef.current = messageViewportRef.current.scrollHeight;
     try {
@@ -1223,12 +836,7 @@ export default function App() {
 
   async function handleComposerSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeChat) {
-      return;
-    }
-    if (!composerText.trim() && queuedAttachments.length === 0) {
-      return;
-    }
+    if (!activeChat || (!composerText.trim() && queuedAttachments.length === 0)) return;
     setBusy(true);
     try {
       const message = await sendMessage(activeChat, {
@@ -1252,9 +860,7 @@ export default function App() {
 
   async function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
-    if (!files.length) {
-      return;
-    }
+    if (!files.length) return;
     setBusy(true);
     try {
       const uploaded = await Promise.all(files.map((file) => uploadAttachment(file, attachmentComment)));
@@ -1278,9 +884,7 @@ export default function App() {
   }
 
   async function handleSaveEdit(messageId: string) {
-    if (!activeChat) {
-      return;
-    }
+    if (!activeChat) return;
     try {
       const updated = await editMessage(activeChat, messageId, editingText);
       setMessages((current) => upsertMessage(current, updated));
@@ -1292,9 +896,7 @@ export default function App() {
   }
 
   async function handleDeleteMessage(messageId: string) {
-    if (!activeChat) {
-      return;
-    }
+    if (!activeChat) return;
     try {
       await deleteMessage(activeChat, messageId);
       setMessages((current) => removeMessage(current, messageId));
@@ -1306,11 +908,7 @@ export default function App() {
   async function handleCreateRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const room = await createRoom({
-        name: newRoomName,
-        description: newRoomDescription,
-        visibility: newRoomVisibility,
-      });
+      const room = await createRoom({ name: newRoomName, description: newRoomDescription, visibility: newRoomVisibility });
       setShowCreateRoomModal(false);
       setNewRoomName("");
       setNewRoomDescription("");
@@ -1323,9 +921,7 @@ export default function App() {
 
   async function handleInviteUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeRoom) {
-      return;
-    }
+    if (!activeRoom) return;
     try {
       await inviteUserToRoom(activeRoom.id, inviteUsername);
       setInviteUsername("");
@@ -1338,9 +934,7 @@ export default function App() {
 
   async function handleSaveRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeRoom) {
-      return;
-    }
+    if (!activeRoom) return;
     try {
       const updated = await updateRoom(activeRoom.id, {
         name: roomEditName,
@@ -1356,9 +950,7 @@ export default function App() {
   }
 
   async function handleDeleteRoom() {
-    if (!activeRoom) {
-      return;
-    }
+    if (!activeRoom) return;
     try {
       await deleteRoom(activeRoom.id);
       pushInfo("Space deleted.");
@@ -1422,106 +1014,7 @@ export default function App() {
     }
   }
 
-  function renderAuthCard() {
-    return (
-      <main className="auth-shell">
-        <section className="auth-panel">
-          <div className="eyebrow">Meeting Minds</div>
-          <h1>Bring every conversation into one calm place</h1>
-          <p className="lede">
-            Sign in to manage shared spaces, direct conversations, files, presence, and device
-            sessions from one clean workspace.
-          </p>
-          <div className="auth-tabs">
-            <button className={authMode === "login" ? "is-active" : ""} onClick={() => setAuthMode("login")}>
-              Sign In
-            </button>
-            <button
-              className={authMode === "register" ? "is-active" : ""}
-              onClick={() => setAuthMode("register")}
-            >
-              Register
-            </button>
-            <button className={authMode === "reset" ? "is-active" : ""} onClick={() => setAuthMode("reset")}>
-              Reset
-            </button>
-          </div>
-
-          {authMode === "login" ? (
-            <form className="auth-form" onSubmit={handleLoginSubmit}>
-              <label>
-                Email
-                <input value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} type="email" required />
-              </label>
-              <label>
-                Password
-                <input
-                  value={loginPassword}
-                  onChange={(event) => setLoginPassword(event.target.value)}
-                  type="password"
-                  required
-                />
-              </label>
-              <label className="checkbox-row">
-                <input checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} type="checkbox" />
-                Keep this browser signed in
-              </label>
-              <button className="primary-button" disabled={busy} type="submit">
-                {busy ? "Signing in..." : "Sign In"}
-              </button>
-            </form>
-          ) : null}
-
-          {authMode === "register" ? (
-            <form className="auth-form" onSubmit={handleRegisterSubmit}>
-              <label>
-                Email
-                <input value={registerEmail} onChange={(event) => setRegisterEmail(event.target.value)} type="email" required />
-              </label>
-              <label>
-                Username
-                <input
-                  value={registerUsername}
-                  onChange={(event) => setRegisterUsername(event.target.value)}
-                  type="text"
-                  required
-                />
-              </label>
-              <label>
-                Password
-                <input
-                  value={registerPassword}
-                  onChange={(event) => setRegisterPassword(event.target.value)}
-                  type="password"
-                  required
-                />
-              </label>
-              <button className="primary-button" disabled={busy} type="submit">
-                {busy ? "Creating..." : "Create Account"}
-              </button>
-            </form>
-          ) : null}
-
-          {authMode === "reset" ? (
-            <form className="auth-form" onSubmit={handleResetSubmit}>
-              <label>
-                Account email
-                <input value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} type="email" required />
-              </label>
-              <button className="primary-button" disabled={busy} type="submit">
-                {busy ? "Submitting..." : "Request Reset"}
-              </button>
-            </form>
-          ) : null}
-
-          <footer className="auth-footer">
-            <span>Live link: {connectionState}</span>
-            <span>Presence and unread counts stay in sync through the session socket.</span>
-          </footer>
-        </section>
-      </main>
-    );
-  }
+  // ── Render ────────────────────────────────────────────────────────────────
 
   if (shellStatus === "booting") {
     return (
@@ -1535,22 +1028,44 @@ export default function App() {
   if (shellStatus === "guest" || !profile) {
     return (
       <>
-        {renderAuthCard()}
+        <AuthShell
+          authMode={authMode}
+          busy={busy}
+          connectionState={connectionState}
+          loginEmail={loginEmail}
+          loginPassword={loginPassword}
+          onLoginSubmit={handleLoginSubmit}
+          onRegisterSubmit={handleRegisterSubmit}
+          onResetSubmit={handleResetSubmit}
+          onSetAuthMode={setAuthMode}
+          onSetLoginEmail={setLoginEmail}
+          onSetLoginPassword={setLoginPassword}
+          onSetRegisterEmail={setRegisterEmail}
+          onSetRegisterPassword={setRegisterPassword}
+          onSetRegisterUsername={setRegisterUsername}
+          onSetRememberMe={setRememberMe}
+          onSetResetEmail={setResetEmail}
+          registerEmail={registerEmail}
+          registerPassword={registerPassword}
+          registerUsername={registerUsername}
+          rememberMe={rememberMe}
+          resetEmail={resetEmail}
+        />
         {toast ? <Toast tone={toast.tone} message={toast.message} /> : null}
       </>
     );
   }
 
   const currentDialog =
-    activeChat?.kind === "dialog" ? dialogs.find((dialog) => dialog.id === activeChat.id) ?? null : null;
+    activeChat?.kind === "dialog" ? dialogs.find((d) => d.id === activeChat.id) ?? null : null;
   const activeFriend = currentDialog
-    ? friends.find((friend) => friend.user.id === currentDialog.other_user.id) ?? null
+    ? friends.find((f) => f.user.id === currentDialog.other_user.id) ?? null
     : null;
   const activePeerBan = currentDialog
-    ? peerBans.find((ban) => ban.user.id === currentDialog.other_user.id) ?? null
+    ? peerBans.find((b) => b.user.id === currentDialog.other_user.id) ?? null
     : null;
-  const unreadRooms = joinedRooms.filter((room) => (room.unread_count ?? 0) > 0).length;
-  const unreadDialogs = dialogs.filter((dialog) => dialog.unread_count > 0).length;
+  const unreadRooms = joinedRooms.filter((r) => (r.unread_count ?? 0) > 0).length;
+  const unreadDialogs = dialogs.filter((d) => d.unread_count > 0).length;
 
   return (
     <>
@@ -1568,19 +1083,9 @@ export default function App() {
               {connectionState === "open" ? "Live" : connectionState === "connecting" ? "Connecting" : "Offline"}
             </div>
             <div className="topbar-actions">
-              <button className="ghost-button" onClick={() => setShowCreateRoomModal(true)}>
-                New Space
-              </button>
-              <button className="ghost-button" onClick={() => setShowPeopleModal(true)}>
-                People
-              </button>
-              <button
-                className="ghost-button"
-                onClick={() => {
-                  setShowSessionsModal(true);
-                  void loadSessions();
-                }}
-              >
+              <button className="ghost-button" onClick={() => setShowCreateRoomModal(true)}>New Space</button>
+              <button className="ghost-button" onClick={() => setShowPeopleModal(true)}>People</button>
+              <button className="ghost-button" onClick={() => { setShowSessionsModal(true); void loadSessions(); }}>
                 Sessions
               </button>
             </div>
@@ -1589,353 +1094,70 @@ export default function App() {
                 <strong>{profile.username}</strong>
                 <span>{profile.email}</span>
               </div>
-              <button className="ghost-button" onClick={handleLogout}>
-                Log Out
-              </button>
+              <button className="ghost-button" onClick={handleLogout}>Log Out</button>
             </div>
           </div>
         </header>
 
         <section className="workspace">
-          <aside className="sidebar">
-            <div className="sidebar-header">
-              <button
-                className={sidebarTab === "rooms" ? "is-active" : ""}
-                onClick={() => setSidebarTab("rooms")}
-              >
-                Spaces
-                {unreadRooms ? <span className="badge">{compactCount(unreadRooms)}</span> : null}
-              </button>
-              <button
-                className={sidebarTab === "people" ? "is-active" : ""}
-                onClick={() => setSidebarTab("people")}
-              >
-                People
-                {unreadDialogs || notificationSummary.incoming_friend_requests ? (
-                  <span className="badge">
-                    {compactCount(unreadDialogs + notificationSummary.incoming_friend_requests)}
-                  </span>
-                ) : null}
-              </button>
-            </div>
-
-            {sidebarTab === "rooms" ? (
-              <>
-                <section className="sidebar-section">
-                  <div className="section-title">Joined Spaces</div>
-                  {joinedRooms.length ? (
-                    joinedRooms.map((room) => (
-                      <button
-                        className={`list-item ${activeChat?.kind === "room" && activeChat.id === room.id ? "is-selected" : ""}`}
-                        key={room.id}
-                        onClick={() => void handleSelectChat({ kind: "room", id: room.id })}
-                      >
-                        <div>
-                          <strong>{room.name}</strong>
-                          <span>{room.visibility === "private" ? "Private space" : "Open space"}</span>
-                        </div>
-                        {(room.unread_count ?? 0) > 0 ? <span className="badge">{compactCount(room.unread_count ?? 0)}</span> : null}
-                      </button>
-                    ))
-                  ) : (
-                    <p className="empty-copy">No spaces joined yet.</p>
-                  )}
-                </section>
-
-                <section className="sidebar-section">
-                  <div className="section-title">Explore Spaces</div>
-                  <input
-                    className="search-input"
-                    onChange={(event) => setPublicSearch(event.target.value)}
-                    placeholder="Search open spaces"
-                    value={publicSearch}
-                  />
-                  {publicRooms.map((room) => {
-                    const isJoined = joinedRooms.some((joined) => joined.id === room.id);
-                    return (
-                      <div className="list-card" key={room.id}>
-                        <div>
-                          <strong>{room.name}</strong>
-                          <span>{room.member_count} people inside</span>
-                        </div>
-                        <button className="mini-button positive" disabled={isJoined} onClick={() => void handleJoinRoom(room.id)}>
-                          {isJoined ? "Joined" : "Join"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </section>
-
-                {pendingInvitations.length ? (
-                  <section className="sidebar-section">
-                    <div className="section-title">Pending Invites</div>
-                    {pendingInvitations.map((invitation) => (
-                      <div className="list-card" key={invitation.id}>
-                        <div>
-                          <strong>{invitation.room_name ?? invitation.room_id}</strong>
-                          <span>{formatRelative(invitation.created_at)}</span>
-                        </div>
-                        <div className="inline-actions">
-                          <button className="mini-button positive" onClick={() => void handleAcceptInvitation(invitation.id)}>
-                            Accept
-                          </button>
-                          <button className="mini-button danger" onClick={() => void handleRejectInvitation(invitation.id)}>
-                            Reject
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <section className="sidebar-section">
-                  <div className="section-title">Direct Conversations</div>
-                  {dialogs.length ? (
-                    dialogs.map((dialog) => (
-                      <button
-                        className={`list-item ${activeChat?.kind === "dialog" && activeChat.id === dialog.id ? "is-selected" : ""}`}
-                        key={dialog.id}
-                        onClick={() => void handleSelectChat({ kind: "dialog", id: dialog.id })}
-                      >
-                        <div>
-                          <strong>{dialog.other_user.username}</strong>
-                          <span>
-                            {dialog.other_user.presence ?? "offline"}
-                            {dialog.is_frozen ? " - frozen" : ""}
-                          </span>
-                        </div>
-                        {dialog.unread_count > 0 ? <span className="badge">{compactCount(dialog.unread_count)}</span> : null}
-                      </button>
-                    ))
-                  ) : (
-                    <p className="empty-copy">No direct conversations yet.</p>
-                  )}
-                </section>
-
-                <section className="sidebar-section">
-                  <div className="section-title">People</div>
-                  {friends.length ? (
-                    friends.map((friend) => (
-                      <div className="list-card" key={friend.user.id}>
-                        <div>
-                          <strong>{friend.user.username}</strong>
-                          <span>{friend.user.presence ?? "offline"}</span>
-                        </div>
-                        <button className="mini-button positive" onClick={() => void handleOpenDialog(friend)}>
-                          Open
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="empty-copy">No people added yet.</p>
-                  )}
-                </section>
-
-                <section className="sidebar-section">
-                  <div className="section-title">Connection Requests</div>
-                  {incomingRequests.length ? (
-                    incomingRequests.map((request) => (
-                      <div className="list-card" key={request.id}>
-                        <div>
-                          <strong>{request.from_user.username}</strong>
-                          <span>{request.message || "No message"}</span>
-                        </div>
-                        <div className="inline-actions">
-                          <button
-                            className="mini-button positive"
-                            onClick={() => void runAction(() => acceptFriendRequest(request.id), refreshCurrentShellSilently)}
-                          >
-                            Accept
-                          </button>
-                          <button
-                            className="mini-button danger"
-                            onClick={() => void runAction(() => rejectFriendRequest(request.id), refreshCurrentShellSilently)}
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="empty-copy">No incoming requests.</p>
-                  )}
-                </section>
-              </>
-            )}
-          </aside>
+          <Sidebar
+            activeChat={activeChat}
+            dialogs={dialogs}
+            friends={friends}
+            incomingRequests={incomingRequests}
+            joinedRooms={joinedRooms}
+            notificationSummary={notificationSummary}
+            onAcceptFriendRequest={(id) => void runAction(() => acceptFriendRequest(id), refreshCurrentShellSilently)}
+            onAcceptInvitation={handleAcceptInvitation}
+            onJoinRoom={handleJoinRoom}
+            onOpenDialog={handleOpenDialog}
+            onRejectFriendRequest={(id) => void runAction(() => rejectFriendRequest(id), refreshCurrentShellSilently)}
+            onRejectInvitation={handleRejectInvitation}
+            onSelectChat={handleSelectChat}
+            onSetPublicSearch={setPublicSearch}
+            onSetSidebarTab={setSidebarTab}
+            pendingInvitations={pendingInvitations}
+            publicRooms={publicRooms}
+            publicSearch={publicSearch}
+            sidebarTab={sidebarTab}
+            unreadDialogs={unreadDialogs}
+            unreadRooms={unreadRooms}
+          />
 
           <section className="conversation">
             {activeChat ? (
-              <>
-                <header className="conversation-header">
-                  <div>
-                    <div className="eyebrow">
-                      {activeChat.kind === "room" ? activeRoom?.visibility ?? "space" : "direct conversation"}
-                    </div>
-                    <h2>
-                      {activeChat.kind === "room"
-                        ? activeRoom?.name ?? "Space"
-                        : currentDialog?.other_user.username ?? "Conversation"}
-                    </h2>
-                  </div>
-                  <div className="conversation-actions">
-                    {activeChat.kind === "room" ? (
-                      <IconButton icon="leave" label="Leave space" onClick={() => void handleLeaveRoom(activeChat.id)} />
-                    ) : null}
-                    {activeChat.kind === "dialog" && currentDialog?.is_frozen ? <span className="warning-chip">Messaging frozen</span> : null}
-                  </div>
-                </header>
-
-                <div
-                  className="message-history"
-                  onScroll={(event) => {
-                    const target = event.currentTarget;
-                    stickToBottomRef.current =
-                      target.scrollHeight - target.scrollTop - target.clientHeight < 80;
-                    if (target.scrollTop < 80) {
-                      void handleLoadOlder();
-                    }
-                  }}
-                  ref={messageViewportRef}
-                >
-                  {loadingOlder ? <div className="history-banner">Loading older messages...</div> : null}
-                  {messageCursor ? <div className="history-banner">Scroll upward to load more history.</div> : null}
-                  {messagesLoading ? <div className="history-banner">Loading conversation...</div> : null}
-                  {!messagesLoading && !messages.length ? (
-                    <div className="empty-history">
-                      <h3>Start the conversation</h3>
-                      <p>History comes from the API, and fresh updates arrive through the live socket.</p>
-                    </div>
-                  ) : null}
-
-                  {messages.map((message) => {
-                    const isOwn = message.sender.id === profile.id;
-                    const canDelete =
-                      isOwn ||
-                      (activeChat.kind === "room" &&
-                        ["owner", "admin"].includes(activeRoom?.current_user_role ?? "member"));
-                    return (
-                      <article className={`message-card ${isOwn ? "is-own" : ""}`} key={message.id}>
-                        <header>
-                          <strong>{message.sender.username}</strong>
-                          <span>{formatTimestamp(message.created_at)}</span>
-                        </header>
-                        {message.reply_to ? (
-                          <div className="reply-chip">
-                            Replying to {message.reply_to.sender.username}: {message.reply_to.text || "Attachment"}
-                          </div>
-                        ) : null}
-                        {editingMessageId === message.id ? (
-                          <div className="edit-box">
-                            <textarea value={editingText} onChange={(event) => setEditingText(event.target.value)} rows={3} />
-                            <div className="inline-actions">
-                              <IconButton icon="save" label="Save edit" onClick={() => void handleSaveEdit(message.id)} variant="positive" />
-                              <IconButton
-                                icon="cancel"
-                                label="Cancel edit"
-                                onClick={() => {
-                                  setEditingMessageId(null);
-                                  setEditingText("");
-                                }}
-                                variant="danger"
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <p>{message.text || "Attachment-only message"}</p>
-                        )}
-                        {message.attachments.length ? (
-                          <div className="attachment-list">
-                            {message.attachments.map((attachment) => {
-                              const attachmentUrl = toPublicUrl(attachment.download_url);
-
-                              return (
-                                <MessageAttachmentCard
-                                  attachment={attachment}
-                                  attachmentUrl={attachmentUrl}
-                                  key={attachment.id}
-                                />
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        <footer>
-                          <span>{message.is_edited ? "edited" : "posted"}</span>
-                          <div className="inline-actions">
-                            <IconButton icon="reply" label="Reply" onClick={() => setReplyTarget(message)} variant="positive" />
-                            {isOwn ? (
-                              <IconButton
-                                icon="edit"
-                                label="Edit message"
-                                onClick={() => {
-                                  setEditingMessageId(message.id);
-                                  setEditingText(message.text);
-                                }}
-                                variant="positive"
-                              />
-                            ) : null}
-                            {canDelete ? (
-                              <IconButton icon="delete" label="Delete message" onClick={() => void handleDeleteMessage(message.id)} variant="danger" />
-                            ) : null}
-                          </div>
-                        </footer>
-                      </article>
-                    );
-                  })}
-                </div>
-
-                <form className="composer" onSubmit={handleComposerSubmit}>
-                  {replyTarget ? (
-                    <div className="composer-banner">
-                      Replying to {replyTarget.sender.username}: {replyTarget.text || "Attachment"}
-                      <IconButton icon="clear" label="Clear reply target" onClick={() => setReplyTarget(null)} variant="danger" />
-                    </div>
-                  ) : null}
-                  {queuedAttachments.length ? (
-                    <div className="composer-banner">
-                      {queuedAttachments.map((attachment) => (
-                        <span className="queued-chip" key={attachment.id}>
-                          {attachment.filename}
-                          <button onClick={() => void handleRemoveQueuedAttachment(attachment.id)} type="button">
-                            x
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <textarea
-                    onChange={(event) => setComposerText(event.target.value)}
-                    placeholder={
-                      activeChat.kind === "dialog" && currentDialog?.is_frozen
-                        ? "This dialog is frozen by friendship or peer-ban rules."
-                        : "Write a message"
-                    }
-                    rows={4}
-                    value={composerText}
-                  />
-                  <div className="composer-tools">
-                    <label aria-label="Attach files" className="file-label icon-button" title="Attach files">
-                      <Icon name="attach" />
-                      <span className="sr-only">Attach files</span>
-                      <input multiple onChange={handleFileSelection} type="file" />
-                    </label>
-                    <input
-                      onChange={(event) => setAttachmentComment(event.target.value)}
-                      placeholder="Attachment comment"
-                      value={attachmentComment}
-                    />
-                    <IconButton
-                      disabled={busy || (activeChat.kind === "dialog" && currentDialog?.is_frozen)}
-                      icon="send"
-                      label="Send message"
-                      type="submit"
-                      variant="positive"
-                    />
-                  </div>
-                </form>
-              </>
+              <ConversationPanel
+                activeChat={activeChat}
+                activeRoom={activeRoom}
+                attachmentComment={attachmentComment}
+                busy={busy}
+                composerText={composerText}
+                currentDialog={currentDialog}
+                editingMessageId={editingMessageId}
+                editingText={editingText}
+                loadingOlder={loadingOlder}
+                messageCursor={messageCursor}
+                messages={messages}
+                messagesLoading={messagesLoading}
+                onClearReplyTarget={() => setReplyTarget(null)}
+                onComposerSubmit={handleComposerSubmit}
+                onDeleteMessage={handleDeleteMessage}
+                onFileSelection={handleFileSelection}
+                onLeaveRoom={handleLeaveRoom}
+                onLoadOlder={handleLoadOlder}
+                onRemoveQueuedAttachment={handleRemoveQueuedAttachment}
+                onSaveEdit={handleSaveEdit}
+                onSetAttachmentComment={setAttachmentComment}
+                onSetComposerText={setComposerText}
+                onSetEditingMessageId={setEditingMessageId}
+                onSetEditingText={setEditingText}
+                onSetReplyTarget={setReplyTarget}
+                profile={profile}
+                queuedAttachments={queuedAttachments}
+                replyTarget={replyTarget}
+                stickToBottomRef={stickToBottomRef}
+                viewportRef={messageViewportRef}
+              />
             ) : (
               <div className="empty-history">
                 <h2>Select a space or conversation</h2>
@@ -1944,340 +1166,85 @@ export default function App() {
             )}
           </section>
 
-          <aside className="context-panel">
-            {activeChat?.kind === "room" && activeRoom ? (
-              <>
-                <section className="panel-card">
-                  <div className="section-title">Space Details</div>
-                  <div className="detail-grid">
-                    <span>Owner</span>
-                    <strong>{activeRoom.owner.username}</strong>
-                    <span>Visibility</span>
-                    <strong>{activeRoom.visibility}</strong>
-                    <span>Members</span>
-                    <strong>{activeRoom.member_count}</strong>
-                    <span>Your role</span>
-                    <strong>{activeRoom.current_user_role}</strong>
-                  </div>
-                </section>
-
-                <section className="panel-card">
-                  <div className="section-title">People In This Space</div>
-                  {activeRoomMembers.map((member) => (
-                    <div className="list-card" key={member.user.id}>
-                      <div className="list-card-content">
-                        <strong>{member.user.username}</strong>
-                        <span>
-                          {member.role} - {member.user.presence ?? "offline"}
-                        </span>
-                      </div>
-                      <div className="list-card-actions">
-                        {activeRoom.current_user_role === "owner" && member.role === "member" ? (
-                          <IconButton
-                            icon="promote"
-                            label={`Promote ${member.user.username} to admin`}
-                            onClick={() =>
-                              void runAction(
-                                () => promoteRoomAdmin(activeRoom.id, member.user.id),
-                                () => refreshActiveRoomSilently(activeRoom.id),
-                              )
-                            }
-                            variant="positive"
-                          />
-                        ) : null}
-                        {activeRoom.current_user_role === "owner" && member.role === "admin" ? (
-                          <IconButton
-                            icon="demote"
-                            label={`Demote ${member.user.username} from admin`}
-                            onClick={() =>
-                              void runAction(
-                                () => demoteRoomAdmin(activeRoom.id, member.user.id),
-                                () => refreshActiveRoomSilently(activeRoom.id),
-                              )
-                            }
-                            variant="danger"
-                          />
-                        ) : null}
-                        {["owner", "admin"].includes(activeRoom.current_user_role) && member.role !== "owner" ? (
-                          <>
-                            <IconButton
-                              icon="remove"
-                              label={`Remove ${member.user.username} from space`}
-                              onClick={() =>
-                                void runAction(
-                                  () => removeRoomMember(activeRoom.id, member.user.id),
-                                  () => refreshActiveRoomSilently(activeRoom.id),
-                                )
-                              }
-                              variant="danger"
-                            />
-                            <IconButton
-                              icon="ban"
-                              label={`Ban ${member.user.username} from space`}
-                              onClick={() =>
-                                void runAction(
-                                  () => banRoomUser(activeRoom.id, member.user.id),
-                                  () => refreshActiveRoomSilently(activeRoom.id),
-                                )
-                              }
-                              variant="danger"
-                            />
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </section>
-
-                {["owner", "admin"].includes(activeRoom.current_user_role) ? (
-                  <>
-                    <section className="panel-card">
-                      <div className="section-title">Invite To Space</div>
-                      <form className="stack-form" onSubmit={handleInviteUser}>
-                        <input value={inviteUsername} onChange={(event) => setInviteUsername(event.target.value)} placeholder="username" />
-                        <IconButton icon="invite" label="Send space invite" type="submit" variant="positive" />
-                      </form>
-                    </section>
-
-                    <section className="panel-card">
-                      <div className="section-title">Active Bans</div>
-                      {activeRoomBans.length ? (
-                        activeRoomBans.map((ban) => (
-                          <div className="list-card" key={ban.user.id}>
-                            <div className="list-card-content">
-                              <strong>{ban.user.username}</strong>
-                              <span>by {ban.banned_by.username}</span>
-                            </div>
-                            <div className="list-card-actions">
-                              <IconButton
-                                icon="unban"
-                                label={`Unban ${ban.user.username}`}
-                                onClick={() =>
-                                  void runAction(
-                                    () => unbanRoomUser(activeRoom.id, ban.user.id),
-                                    () => refreshActiveRoomSilently(activeRoom.id),
-                                  )
-                                }
-                                variant="positive"
-                              />
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="empty-copy">No active bans.</p>
-                      )}
-                    </section>
-
-                    <section className="panel-card">
-                      <div className="section-title">Pending Invites</div>
-                      {activeRoomInvitations.length ? (
-                        activeRoomInvitations.map((invitation) => (
-                          <div className="list-card" key={invitation.id}>
-                            <div className="list-card-content">
-                              <strong>{invitation.user?.username ?? "Pending user"}</strong>
-                              <span>{formatRelative(invitation.created_at)}</span>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="empty-copy">No pending space invites.</p>
-                      )}
-                    </section>
-                  </>
-                ) : null}
-
-                {activeRoom.current_user_role === "owner" ? (
-                  <section className="panel-card danger-card">
-                    <div className="section-title">Space Controls</div>
-                    <form className="stack-form" onSubmit={handleSaveRoom}>
-                      <input value={roomEditName} onChange={(event) => setRoomEditName(event.target.value)} />
-                      <textarea rows={3} value={roomEditDescription} onChange={(event) => setRoomEditDescription(event.target.value)} />
-                      <select value={roomEditVisibility} onChange={(event) => setRoomEditVisibility(event.target.value as RoomDetail["visibility"])}>
-                        <option value="public">Public</option>
-                        <option value="private">Private</option>
-                      </select>
-                      <button className="primary-button" type="submit">
-                        Save Space
-                      </button>
-                    </form>
-                    <button className="danger-button" onClick={() => void handleDeleteRoom()}>
-                      Delete Space
-                    </button>
-                  </section>
-                ) : null}
-              </>
-            ) : currentDialog ? (
-              <>
-                <section className="panel-card">
-                  <div className="section-title">Person</div>
-                  <div className="detail-grid">
-                    <span>User</span>
-                    <strong>{currentDialog.other_user.username}</strong>
-                    <span>Presence</span>
-                    <strong>{currentDialog.other_user.presence ?? "offline"}</strong>
-                    <span>Status</span>
-                    <strong>{currentDialog.is_frozen ? "Frozen" : "Active"}</strong>
-                  </div>
-                </section>
-
-                <section className="panel-card">
-                  <div className="section-title">Connection</div>
-                  {activeFriend ? <p className="empty-copy">Connected since {formatTimestamp(activeFriend.friend_since)}</p> : <p className="empty-copy">Not in your people list yet.</p>}
-                  <div className="inline-actions wrap">
-                    {activeFriend ? (
-                      <IconButton
-                        icon="friend-remove"
-                        label={`Remove ${currentDialog.other_user.username} from friends`}
-                        onClick={() => void runAction(() => removeFriend(activeFriend.user.id), refreshCurrentShellSilently)}
-                        variant="danger"
-                      />
-                    ) : null}
-                    {activePeerBan ? (
-                      <IconButton
-                        icon="peer-unban"
-                        label={`Remove peer ban for ${currentDialog.other_user.username}`}
-                        onClick={() => void runAction(() => removePeerBan(activePeerBan.user.id), refreshCurrentShellSilently)}
-                        variant="positive"
-                      />
-                    ) : (
-                      <IconButton
-                        icon="peer-ban"
-                        label={`Create peer ban for ${currentDialog.other_user.username}`}
-                        onClick={() => void runAction(() => createPeerBan(currentDialog.other_user.id), refreshCurrentShellSilently)}
-                        variant="danger"
-                      />
-                    )}
-                  </div>
-                </section>
-              </>
-            ) : (
-              <section className="panel-card">
-                <div className="section-title">Context</div>
-                <p className="empty-copy">People, moderation tools, and conversation context appear here for the selected thread.</p>
-              </section>
-            )}
-          </aside>
+          <ContextPanel
+            activeChat={activeChat}
+            activeFriend={activeFriend}
+            activePeerBan={activePeerBan}
+            activeRoom={activeRoom}
+            activeRoomBans={activeRoomBans}
+            activeRoomInvitations={activeRoomInvitations}
+            activeRoomMembers={activeRoomMembers}
+            currentDialog={currentDialog}
+            inviteUsername={inviteUsername}
+            onBanUser={(userId) => {
+              if (activeRoom) void runAction(() => banRoomUser(activeRoom.id, userId), () => refreshActiveRoomSilently(activeRoom.id));
+            }}
+            onCreatePeerBan={(userId) => void runAction(() => createPeerBan(userId), refreshCurrentShellSilently)}
+            onDeleteRoom={handleDeleteRoom}
+            onDemoteAdmin={(userId) => {
+              if (activeRoom) void runAction(() => demoteRoomAdmin(activeRoom.id, userId), () => refreshActiveRoomSilently(activeRoom.id));
+            }}
+            onInviteUser={handleInviteUser}
+            onPromoteAdmin={(userId) => {
+              if (activeRoom) void runAction(() => promoteRoomAdmin(activeRoom.id, userId), () => refreshActiveRoomSilently(activeRoom.id));
+            }}
+            onRemoveFriend={(userId) => void runAction(() => removeFriend(userId), refreshCurrentShellSilently)}
+            onRemoveMember={(userId) => {
+              if (activeRoom) void runAction(() => removeRoomMember(activeRoom.id, userId), () => refreshActiveRoomSilently(activeRoom.id));
+            }}
+            onRemovePeerBan={(userId) => void runAction(() => removePeerBan(userId), refreshCurrentShellSilently)}
+            onSaveRoom={handleSaveRoom}
+            onSetInviteUsername={setInviteUsername}
+            onSetRoomEditDescription={setRoomEditDescription}
+            onSetRoomEditName={setRoomEditName}
+            onSetRoomEditVisibility={setRoomEditVisibility}
+            onUnbanUser={(userId) => {
+              if (activeRoom) void runAction(() => unbanRoomUser(activeRoom.id, userId), () => refreshActiveRoomSilently(activeRoom.id));
+            }}
+            roomEditDescription={roomEditDescription}
+            roomEditName={roomEditName}
+            roomEditVisibility={roomEditVisibility}
+          />
         </section>
       </main>
 
       {showCreateRoomModal ? (
-        <Modal title="Create Space" onClose={() => setShowCreateRoomModal(false)}>
-          <form className="stack-form" onSubmit={handleCreateRoom}>
-            <label>
-              Space name
-              <input value={newRoomName} onChange={(event) => setNewRoomName(event.target.value)} required />
-            </label>
-            <label>
-              Description
-              <textarea rows={3} value={newRoomDescription} onChange={(event) => setNewRoomDescription(event.target.value)} />
-            </label>
-            <label>
-              Visibility
-              <select value={newRoomVisibility} onChange={(event) => setNewRoomVisibility(event.target.value as RoomDetail["visibility"])}>
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-              </select>
-            </label>
-            <button className="primary-button" type="submit">
-              Create Space
-            </button>
-          </form>
-        </Modal>
+        <CreateRoomModal
+          newRoomDescription={newRoomDescription}
+          newRoomName={newRoomName}
+          newRoomVisibility={newRoomVisibility}
+          onClose={() => setShowCreateRoomModal(false)}
+          onSetDescription={setNewRoomDescription}
+          onSetName={setNewRoomName}
+          onSetVisibility={setNewRoomVisibility}
+          onSubmit={handleCreateRoom}
+        />
       ) : null}
 
       {showPeopleModal ? (
-        <Modal title="People" onClose={() => setShowPeopleModal(false)}>
-          <form className="stack-form" onSubmit={handleSendFriendRequest}>
-            <label>
-              Username
-              <input value={friendRequestUsername} onChange={(event) => setFriendRequestUsername(event.target.value)} required />
-            </label>
-            <label>
-              Message
-              <textarea rows={3} value={friendRequestMessage} onChange={(event) => setFriendRequestMessage(event.target.value)} />
-            </label>
-            <button className="primary-button" type="submit">
-              Send Connection Request
-            </button>
-          </form>
-          {outgoingRequests.length ? (
-            <section className="panel-card">
-              <div className="section-title">Sent Requests</div>
-              {outgoingRequests.map((request) => (
-                <div className="list-card" key={request.id}>
-                  <div>
-                    <strong>{request.to_user.username}</strong>
-                    <span>{request.message || "No message"}</span>
-                  </div>
-                </div>
-              ))}
-            </section>
-          ) : null}
-          {peerBans.length ? (
-            <section className="panel-card">
-              <div className="section-title">Blocked People</div>
-              {peerBans.map((ban) => (
-                <div className="list-card" key={ban.user.id}>
-                  <div>
-                    <strong>{ban.user.username}</strong>
-                    <span>{formatRelative(ban.created_at)}</span>
-                  </div>
-                  <button
-                    className="mini-button positive"
-                    onClick={() => void runAction(() => removePeerBan(ban.user.id), refreshCurrentShellSilently)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </Modal>
+        <PeopleModal
+          friendRequestMessage={friendRequestMessage}
+          friendRequestUsername={friendRequestUsername}
+          onClose={() => setShowPeopleModal(false)}
+          onRemovePeerBan={(userId) => void runAction(() => removePeerBan(userId), refreshCurrentShellSilently)}
+          onSetMessage={setFriendRequestMessage}
+          onSetUsername={setFriendRequestUsername}
+          onSubmit={handleSendFriendRequest}
+          outgoingRequests={outgoingRequests}
+          peerBans={peerBans}
+        />
       ) : null}
 
       {showSessionsModal ? (
-        <Modal title="Active Sessions" onClose={() => setShowSessionsModal(false)}>
-          {sessionsLoading ? <p className="empty-copy">Loading sessions...</p> : null}
-          {sessions.map((session) => (
-            <div className="list-card" key={session.id}>
-              <div>
-                <strong>{session.is_current ? "This device" : "Signed-in device"}</strong>
-                <span>{session.user_agent || "Unknown agent"}</span>
-                <span>{session.ip_address || "Unknown IP"}</span>
-              </div>
-              {!session.is_current ? (
-                <button className="mini-button danger" onClick={() => void runAction(() => revokeSession(session.id), loadSessions)}>
-                  Sign Out
-                </button>
-              ) : (
-                <span className="warning-chip">Current</span>
-              )}
-            </div>
-          ))}
-        </Modal>
+        <SessionsModal
+          onClose={() => setShowSessionsModal(false)}
+          onRevokeSession={(id) => void runAction(() => revokeSession(id), loadSessions)}
+          sessions={sessions}
+          sessionsLoading={sessionsLoading}
+        />
       ) : null}
 
       {toast ? <Toast tone={toast.tone} message={toast.message} /> : null}
     </>
   );
-}
-
-function Modal(props: { title: string; onClose: () => void; children: ReactNode }) {
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="modal-card" role="dialog" aria-modal="true" aria-label={props.title}>
-        <header className="modal-header">
-          <h2>{props.title}</h2>
-          <button className="ghost-button" onClick={props.onClose}>
-            Close
-          </button>
-        </header>
-        {props.children}
-      </section>
-    </div>
-  );
-}
-
-function Toast(props: { tone: ToastTone; message: string }) {
-  return <div className={`toast toast-${props.tone}`}>{props.message}</div>;
 }
