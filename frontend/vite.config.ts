@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     },
     server: {
-      host: "::",
+      host: "0.0.0.0",
       port: Number(merged.FRONTEND_PORT || 3000),
       allowedHosts: "all",
       hmr: {
